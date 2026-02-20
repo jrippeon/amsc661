@@ -9,7 +9,7 @@ def check_order(A, b):
     '''
 
     (m,n)= A.shape
-    assert b.shape == (n, ), 'improper dimenensions'
+    assert m == n and b.shape == (n, ), 'improper dimenensions'
 
     # 1st order check
     if not np.isclose(np.einsum('l->', b), 1):
