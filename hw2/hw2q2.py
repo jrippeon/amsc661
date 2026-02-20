@@ -11,7 +11,8 @@ def plot_RAS(
     filled=False,
     ax=None,
     color='k',
-    label=None
+    label=None,
+    decorations=False
 ):
     '''
     Plots the region of absolute stability for an RK method with the given
@@ -55,6 +56,16 @@ def plot_RAS(
         # doing this nonsense to have something show up in the legend
         # too lazy to figure out how to do it the right way
         ax.plot([], [], color=color, label=label)
+    
+    # add some decorations here
+    if decorations:
+        ax.vlines([0], -window_size, window_size, colors='k', linestyles='dashed')
+        ax.hlines([0], -window_size, window_size, colors='k', linestyles='dashed')
+        ax.set(
+            xlabel='$\\mathrm{Re}(h \\lambda)$',
+            ylabel='$\\mathrm{Im}(h \\lambda)$'
+        )
+        ax.set_aspect('equal')
 
 # %% Butchers arrays for various RK methods
 
