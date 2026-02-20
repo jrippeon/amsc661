@@ -159,4 +159,33 @@ ax.set(
 )
 ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
 fig.tight_layout()
+# %% A-stability in Q4
+window_size= 15
+
+gamma= 1 - 1 / np.sqrt(2)
+A_dirk2= np.array([
+    [gamma, 0],
+    [1-gamma, gamma]
+])
+b_dirk2= np.array([1-gamma, gamma])
+
+fig, ax= plt.subplots()
+plot_RAS(
+    A= A_dirk2,
+    b= b_dirk2,
+    window_size=window_size,
+    filled=True,
+    ax=ax,
+)
+
+ax.vlines([0], -window_size, window_size, colors='k', linestyles='dashed')
+ax.hlines([0], -window_size, window_size, colors='k', linestyles='dashed')
+ax.set_aspect('equal')
+ax.set(
+    xlabel='$\\mathrm{Re}(h \\lambda)$',
+    ylabel='$\\mathrm{Im}(h \\lambda)$',
+    title='RAS for DIRK2'
+)
+fig.tight_layout()
+
 # %%
