@@ -1,4 +1,4 @@
-from hw2.hw2q2 import plot_RAS
+from rk import plot_RAS
 import numpy as np
 import matplotlib.pyplot as plt
 
