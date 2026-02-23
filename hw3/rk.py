@@ -172,3 +172,26 @@ def newton(f, fprime, x0, max_iter=20, atol=1e-6):
         j += 1
     return x
 
+def check_order(A, b):
+    '''
+    Check the order of a Runge-Kutta method up to order 3,
+    using the conditions.
+    '''
+
+    (m,n)= A.shape
+    assert m == n and b.shape == (n, ), 'improper dimenensions'
+
+    # 1st order check
+    if not np.isclose(np.einsum('l->', b), 1):
+        return 0
+
+    # 2nd order check
+    if not np.isclose(2 * np.einsum('l,lq->', b, A), 1):
+        return 1
+
+    # 3rd order check
+    if not (np.isclose(3 * np.einsum('l, lq, lr->', b, A, A), 1) \
+        and np.isclose(6 * np.einsum('l, lq, qr->', b, A, A), 1)):
+        return 2
+    
+    return 3
