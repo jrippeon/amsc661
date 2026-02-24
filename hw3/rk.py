@@ -85,7 +85,6 @@ b_DIRKo3= np.array([1/2, 1/2])
 def dirk(f, t_span, y0, method, h, A=None, b=None, dfdy=None):
     '''
     Diagonally Implicit Runge-Kutta with given A and b matrices.
-    y0 always needs to be a 1d numpy array or it blows up.
     '''
     # pick the method pased on the `method` parameter
     if method == 'DIRK2':
@@ -104,73 +103,76 @@ def dirk(f, t_span, y0, method, h, A=None, b=None, dfdy=None):
     # validate the input a little bit, for fun
     if (num_stages != cols) or (b.shape != (num_stages,)): 
         raise ValueError(f'Invalid Dimensions. {A.shape=} while {b.shape=}')
-    y0= np.asarray(y0)
-    if len(y0.shape) > 1:
-        raise ValueError(f'Invalid Dimensions. {y0.shape=}, must be a 1D array')
+
+    y0= np.array(y0, dtype=float)
+    if y0.ndim > 1:
+        raise ValueError(f'Invalid Dimensions. {y0.shape=}, must be a scalar or 1D array')
 
     # the c matrix can be derived from A
     c= np.sum(A, axis=1)
     
-    # this is the ending time we're going to 
+    # Initialize the time array
     t= np.arange(t_span[0], t_span[1], h)
     n_max= len(t)
 
     assert n_max == len(t), f'{n_max=} but {len(t)=}'
 
 
-    # initialize u array to hold our values
-    # I think this botched way of writing it will avoid having it be 2d in the case where y is scalar
-    u= np.zeros([n_max] + list(y0.shape))
+    # initialize u array to hold our values, we use this to handle the scalar and vector cases
+    u= np.zeros((n_max,) + y0.shape)
     print(f'{u.shape=}')
     u[0]= y0
 
+    # initialize an identity matrix, this might be a scalar depending
+    I = 1.0 if (y0.ndim == 0) else np.eye(y0.shape[0])
+
+    # we will resuse this same array. each kj will have the same shape as y
+    k= np.zeros((num_stages,) + y0.shape)
+    # note that A[j, :j] DOESN'T include A[j,j], :j is not inclusive in Python (I always forget)
+    F= lambda kj, j, n: (kj - f(t[n-1] + c[j]*h, u[n-1] + h * (A[j, :j] @ k[:j] + A[j,j] * kj)))
+    Fprime= lambda kj, j, n: (I - dfdy(t[n-1] + c[j]*h, u[n-1] + h*(A[j, :j] @ k[:j] + A[j,j] * kj)) * h * A[j,j])
     # compute the values for each time
     for n in range(1, n_max):
         if n % 100000 == 0:
             print(f'{n=}')
-        # first, compute the k vector
-        k= np.zeros(num_stages)
+        # our initial guess for the solver will simply be f(t,u) (since kj are attempting to approximate this)
+        k0= f(t[n-1], u[n-1])
         for j in range(num_stages):
-            # our initial guess for the solver will simply be f(t,u) (since kj are attempting to approximate this)
-            x0= f(t[n-1], u[n-1])
-            # note that A[j, :j] DOESN'T include A[j,j], :j is not inclusive in Python (I always forget)
-            F= lambda kj: (kj - f(t[n-1] + c[j]*h, u[n-1] + h * (A[j, :j] @ k[:j] + A[j,j] * kj)))
-            # if a derivative was provided, use it in our solution
-            if dfdy != None:
-                Fprime= lambda kj: (1 - dfdy(t[n-1] + c[j]*h, u[n-1] + h*(A[j, :j] @ k[:j] + A[j,j] * kj)) * h * A[j,j])
-                k[j]= fsolve(
-                    func=F,
-                    x0=x0,
-                    fprime=Fprime,
-                    xtol=1e-4,
-                    maxfev=20
-                )
-            # if not, use this torturously slow general purpose method
-            else:
-                k[j]= fsolve(F, x0)
+            k[j]= newton(
+                f=F,
+                fprime=Fprime,
+                x0=k0,
+                args=(j, n)
+            )
 
-        # then, perform the update
         u[n]= u[n-1] + h * b.T @ k
 
     return t, u
 
-def newton(f, fprime, x0, max_iter=20, atol=1e-6):
+def newton(f, fprime, x0, max_iter=20, atol=1e-12, args=()):
     '''
-    Approximate the solution to f(x)=0 using Newton's method
+    Approximate the solution to f(x)=0 using Newton's method.
     '''
-    # check if x0 is a scalar or vector
-    x0= np.asarray(x0)
-    j= 0 
-    x=x0
-    while j < max_iter and f(x) > atol:
-        # if j % 100 == 0:
-        #     print(f'Newton Iteration {j}')
-        if len(x0) == 0:
-            x += - f(x) / fprime(x)
-        else:
-            x += -np.linalg.solve(fprime(x), f(x))
-        j += 1
-    return x
+    # get a copy so we don't mutate x0
+    x=np.array(x0, dtype=float)
+    # check if x was a scalar so we return the same shape
+    is_scalar= (x.ndim == 0)
+    x= np.atleast_1d(x)
+
+    for _ in range(max_iter):
+        # unwrap x if necessary
+        x_input= x[0] if is_scalar else x
+        fx= np.atleast_1d(f(x_input, *args))
+        # check current infinity norm
+        if np.max(np.abs(fx)) < atol:
+            break
+        jx= np.atleast_2d(fprime(x_input, *args))
+        x -= np.linalg.solve(jx, fx)
+    # this is way too annoying
+    # else:
+    #     print(f'newton did not converge after {max_iter} iterations')
+
+    return x[0] if is_scalar else x
 
 def check_order(A, b):
     '''
