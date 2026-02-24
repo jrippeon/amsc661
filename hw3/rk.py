@@ -1,69 +1,6 @@
 import numpy as np
 from scipy.optimize import fsolve
 
-def plot_RAS(
-    A,
-    b,
-    window_size= 3,
-    num_points=1000,
-    filled=False,
-    ax=None,
-    color='k',
-    label=None,
-    decorations=False
-):
-    '''
-    Plots the region of absolute stability for an RK method with the given
-    Butcher's array `A` and `b`.
-    '''
-
-    #### actually computing the contour ####
-
-    # we can get the number of stages from the size of A
-    s= A.shape[0]
-    ones= np.ones(s)
-    I= np.eye(s)
-
-    # mesh grid of z values
-    x= np.linspace(-window_size, window_size, num_points)
-    y= np.linspace(-window_size, window_size, num_points)
-    X,Y= np.meshgrid(x,y)
-
-    # here z = h * lambda
-    Z= X + (1j * Y)
-
-    # we want to compute R(z) = 1 + z b^T (I - zA)^{-1} 1
-    # we flatten Z and broadcast everything
-    Z_flat= Z.ravel()
-    LHS= I - Z_flat[:, None, None] * A
-    # this inverts LHS
-    sol= np.linalg.solve(LHS, ones)
-    # we need to sol @ b to preserve the shapes
-    R_flat= 1 + Z_flat * (sol @ b)
-    R= R_flat.reshape(Z.shape)
-    magnitude= np.abs(R)
-
-    #### plotting ####
-    assert ax != None, 'pass axes idiot'
-
-    if filled: # this is easier to see what is inside vs outside, for testing
-        ax.contourf(X,Y,magnitude, levels=[0, 1], colors='r')
-    else:
-        ax.contour(X,Y,magnitude, levels=[1], colors=color)
-
-        # doing this nonsense to have something show up in the legend
-        # too lazy to figure out how to do it the right way
-        ax.plot([], [], color=color, label=label)
-    
-    # add some decorations here
-    if decorations:
-        ax.vlines([0], -window_size, window_size, colors='k', linestyles='dashed')
-        ax.hlines([0], -window_size, window_size, colors='k', linestyles='dashed')
-        ax.set(
-            xlabel='$\\mathrm{Re}(h \\lambda)$',
-            ylabel='$\\mathrm{Im}(h \\lambda)$'
-        )
-        ax.set_aspect('equal')
 
 # A and b matrices for DIRK2 and DIRKo3
 
@@ -197,3 +134,67 @@ def check_order(A, b):
         return 2
     
     return 3
+
+def plot_RAS(
+    A,
+    b,
+    window_size= 3,
+    num_points=1000,
+    filled=False,
+    ax=None,
+    color='k',
+    label=None,
+    decorations=False
+):
+    '''
+    Plots the region of absolute stability for an RK method with the given
+    Butcher's array `A` and `b`.
+    '''
+
+    #### actually computing the contour ####
+
+    # we can get the number of stages from the size of A
+    s= A.shape[0]
+    ones= np.ones(s)
+    I= np.eye(s)
+
+    # mesh grid of z values
+    x= np.linspace(-window_size, window_size, num_points)
+    y= np.linspace(-window_size, window_size, num_points)
+    X,Y= np.meshgrid(x,y)
+
+    # here z = h * lambda
+    Z= X + (1j * Y)
+
+    # we want to compute R(z) = 1 + z b^T (I - zA)^{-1} 1
+    # we flatten Z and broadcast everything
+    Z_flat= Z.ravel()
+    LHS= I - Z_flat[:, None, None] * A
+    # this inverts LHS
+    sol= np.linalg.solve(LHS, ones)
+    # we need to sol @ b to preserve the shapes
+    R_flat= 1 + Z_flat * (sol @ b)
+    R= R_flat.reshape(Z.shape)
+    magnitude= np.abs(R)
+
+    #### plotting ####
+    assert ax != None, 'pass axes idiot'
+
+    if filled: # this is easier to see what is inside vs outside, for testing
+        ax.contourf(X,Y,magnitude, levels=[0, 1], colors='r')
+    else:
+        ax.contour(X,Y,magnitude, levels=[1], colors=color)
+
+        # doing this nonsense to have something show up in the legend
+        # too lazy to figure out how to do it the right way
+        ax.plot([], [], color=color, label=label)
+    
+    # add some decorations here
+    if decorations:
+        ax.vlines([0], -window_size, window_size, colors='k', linestyles='dashed')
+        ax.hlines([0], -window_size, window_size, colors='k', linestyles='dashed')
+        ax.set(
+            xlabel='$\\mathrm{Re}(h \\lambda)$',
+            ylabel='$\\mathrm{Im}(h \\lambda)$'
+        )
+        ax.set_aspect('equal')
