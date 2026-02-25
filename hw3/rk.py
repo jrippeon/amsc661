@@ -57,7 +57,7 @@ def dirk(f, t_span, y0, method, h, A=None, b=None, dfdy=None):
 
     # initialize u array to hold our values, we use this to handle the scalar and vector cases
     u= np.zeros((n_max,) + y0.shape)
-    print(f'{u.shape=}')
+    # print(f'{u.shape=}')
     u[0]= y0
 
     # initialize an identity matrix, this might be a scalar depending
@@ -70,8 +70,8 @@ def dirk(f, t_span, y0, method, h, A=None, b=None, dfdy=None):
     Fprime= lambda kj, j, n: (I - dfdy(t[n-1] + c[j]*h, u[n-1] + h*(A[j, :j] @ k[:j] + A[j,j] * kj)) * h * A[j,j])
     # compute the values for each time
     for n in range(1, n_max):
-        if n % 100000 == 0:
-            print(f'{n=}')
+        # if n % 100000 == 0:
+        #     print(f'{n=}')
         # our initial guess for the solver will simply be f(t,u) (since kj are attempting to approximate this)
         k0= f(t[n-1], u[n-1])
         for j in range(num_stages):
