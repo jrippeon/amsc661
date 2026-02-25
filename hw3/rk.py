@@ -20,7 +20,7 @@ A_DIRKo3= np.array([
 b_DIRKo3= np.array([1/2, 1/2])
 
 
-def dirk(f, t_span, y0, method, h, A=None, b=None, b_bad=None, dfdy=None, adaptive=False, atol= 1e-5, rtol=1e-5, order=None):
+def dirk(f, t_span, y0, method, h, A=None, b=None, b_bad=None, dfdy=None, adaptive=False, atol= 1e-5, rtol=1e-5, order=None, progress=False, output_hist=False):
     '''
     Diagonally Implicit Runge-Kutta with given A and b matrices.
     '''
@@ -69,12 +69,13 @@ def dirk(f, t_span, y0, method, h, A=None, b=None, b_bad=None, dfdy=None, adapti
     # initialization depends on whether we are adaptive
     if adaptive:
         # random guess for the initial array length
-        current_array_length= int((t_span[1]-t_span[0]) / (h * 10))
+        current_array_length= 1000
         t= np.zeros(current_array_length)
         t[0]= t_span[0]
         u= np.zeros((current_array_length,) + y0.shape)
-        h_hist= np.zeros(current_array_length)
-        h_hist[0]= h
+        if output_hist:
+            h_hist= np.zeros(current_array_length)
+            h_hist[0]= h
 
     else:
         # Initialize the time array
@@ -119,9 +120,10 @@ def dirk(f, t_span, y0, method, h, A=None, b=None, b_bad=None, dfdy=None, adapti
                 t_new[:n]= t[:n]
                 t= t_new
 
-                h_new= np.zeros(current_array_length)
-                h_new[:n]= h_hist[:n]
-                h_hist= h_new
+                if output_hist:
+                    h_new= np.zeros(current_array_length)
+                    h_new[:n]= h_hist[:n]
+                    h_hist= h_new
 
                 u_new= np.zeros((current_array_length,) + y0.shape)
                 u_new[:n]= u[:n]
@@ -139,7 +141,10 @@ def dirk(f, t_span, y0, method, h, A=None, b=None, b_bad=None, dfdy=None, adapti
             if e < E:
                 u[n]= un_good
                 t[n]= t[n-1] + h
-                h_hist[n]= h
+                if output_hist: h_hist[n]= h
+
+                if progress and n % progress == 0:
+                    print(f't={t[n]}')
 
                 n += 1
             # either way, update to a new h
@@ -147,7 +152,8 @@ def dirk(f, t_span, y0, method, h, A=None, b=None, b_bad=None, dfdy=None, adapti
             h *= (E / (e + 1e-15))**(1/order) * 0.9
 
         # note that we only return the parts of the array we wrote to
-        return t[:n],u[:n],h_hist[:n]
+        if output_hist: return t[:n],u[:n],h_hist[:n]
+        return t[:n],u[:n]
 
     else:
         # compute the values for each time
@@ -158,6 +164,9 @@ def dirk(f, t_span, y0, method, h, A=None, b=None, b_bad=None, dfdy=None, adapti
             k0= f(t[n-1], u[n-1])
             k= calc_k(h)
             u[n]= u[n-1] + h * b.T @ k
+
+            if progress and n % progress == 0:
+                print(f't={t[n]}')
 
         return t, u
             
