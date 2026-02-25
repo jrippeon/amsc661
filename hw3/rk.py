@@ -10,6 +10,7 @@ A_DIRK2= np.array([
     [1-g_DIRK2, g_DIRK2]
 ])
 b_DIRK2= np.array([1-g_DIRK2, g_DIRK2])
+b_DIRK2_low_order= np.array([1, 0])
 
 g_DIRKo3= 1/2 + np.sqrt(3)/6
 A_DIRKo3= np.array([
@@ -19,10 +20,13 @@ A_DIRKo3= np.array([
 b_DIRKo3= np.array([1/2, 1/2])
 
 
-def dirk(f, t_span, y0, method, h, A=None, b=None, dfdy=None):
+def dirk(f, t_span, y0, method, h, A=None, b=None, b_bad=None, dfdy=None, adaptive=False, atol= 1e-5, rtol=1e-5, order=None):
     '''
     Diagonally Implicit Runge-Kutta with given A and b matrices.
     '''
+
+    ############################################################################
+
     # pick the method pased on the `method` parameter
     if method == 'DIRK2':
         A= A_DIRK2
@@ -31,9 +35,20 @@ def dirk(f, t_span, y0, method, h, A=None, b=None, dfdy=None):
         A= A_DIRKo3
         b= b_DIRKo3
     elif method == 'custom':
-        assert A != None and b != None, 'No A and b matrices provided'
+        assert A is not None and b is not None, 'No A and b matrices provided'
     else:
         raise ValueError('Invalid method name')
+
+    # validate adaptive step size
+    if adaptive:
+        if method == 'DIRK2':
+            b_bad= b_DIRK2_low_order
+            order= 2
+        elif method == 'custom' and (b_bad is None or order is None):
+            raise ValueError('b_bad or order missing for custom method')
+        else:
+            raise ValueError(f'Adaptive step size not supported for {method}, implementation left as an exercise :^)')
+
 
     num_stages,cols= A.shape
 
@@ -45,46 +60,108 @@ def dirk(f, t_span, y0, method, h, A=None, b=None, dfdy=None):
     if y0.ndim > 1:
         raise ValueError(f'Invalid Dimensions. {y0.shape=}, must be a scalar or 1D array')
 
+    ############################################################################
+
     # the c matrix can be derived from A
     c= np.sum(A, axis=1)
     
-    # Initialize the time array
-    t= np.arange(t_span[0], t_span[1], h)
-    n_max= len(t)
 
-    assert n_max == len(t), f'{n_max=} but {len(t)=}'
+    # initialization depends on whether we are adaptive
+    if adaptive:
+        # random guess for the initial array length
+        current_array_length= int((t_span[1]-t_span[0]) / (h * 10))
+        t= np.zeros(current_array_length)
+        t[0]= t_span[0]
+        u= np.zeros((current_array_length,) + y0.shape)
+        h_hist= np.zeros(current_array_length)
+        h_hist[0]= h
 
-
-    # initialize u array to hold our values, we use this to handle the scalar and vector cases
-    u= np.zeros((n_max,) + y0.shape)
-    # print(f'{u.shape=}')
+    else:
+        # Initialize the time array
+        t= np.arange(t_span[0], t_span[1], h)
+        n_max= len(t)
+        # initialize u array to hold our values, we use this to handle the scalar and vector cases
+        u= np.zeros((n_max,) + y0.shape)
     u[0]= y0
 
     # initialize an identity matrix, this might be a scalar depending
-    I = 1.0 if (y0.ndim == 0) else np.eye(y0.shape[0])
+    I= 1.0 if (y0.ndim == 0) else np.eye(y0.shape[0])
 
-    # we will resuse this same array. each kj will have the same shape as y
-    k= np.zeros((num_stages,) + y0.shape)
-    # note that A[j, :j] DOESN'T include A[j,j], :j is not inclusive in Python (I always forget)
-    F= lambda kj, j, n: (kj - f(t[n-1] + c[j]*h, u[n-1] + h * (A[j, :j] @ k[:j] + A[j,j] * kj)))
-    Fprime= lambda kj, j, n: (I - dfdy(t[n-1] + c[j]*h, u[n-1] + h*(A[j, :j] @ k[:j] + A[j,j] * kj)) * h * A[j,j])
-    # compute the values for each time
-    for n in range(1, n_max):
-        # if n % 100000 == 0:
-        #     print(f'{n=}')
-        # our initial guess for the solver will simply be f(t,u) (since kj are attempting to approximate this)
+    ############################################################################
+
+    # I moved these outside the loop so I don't have to allocate them every time,
+    # might do something, might not
+    F= lambda kj, j, n, h, k: (kj - f(t[n-1] + c[j]*h, u[n-1] + h * (A[j, :j] @ k[:j] + A[j,j] * kj)))
+    Fprime= lambda kj, j, n, h, k: (I - dfdy(t[n-1] + c[j]*h, u[n-1] + h*(A[j, :j] @ k[:j] + A[j,j] * kj)) * h * A[j,j])
+
+    # this routine is common to both versions of the algorithm
+    def calc_k(h):
+        k= np.zeros((num_stages,) + y0.shape)
         k0= f(t[n-1], u[n-1])
         for j in range(num_stages):
             k[j]= newton(
                 f=F,
                 fprime=Fprime,
                 x0=k0,
-                args=(j, n)
+                args=(j, n, h, k)
             )
+        return k
 
-        u[n]= u[n-1] + h * b.T @ k
 
-    return t, u
+    if adaptive:
+        n= 1
+        while t[n-1] < t_span[1]:
+            # first, resize the arrays if needed
+            if n == current_array_length:
+                current_array_length *= 2
+
+                t_new= np.zeros(current_array_length)
+                t_new[:n]= t[:n]
+                t= t_new
+
+                h_new= np.zeros(current_array_length)
+                h_new[:n]= h_hist[:n]
+                h_hist= h_new
+
+                u_new= np.zeros((current_array_length,) + y0.shape)
+                u_new[:n]= u[:n]
+                u= u_new
+            
+            # check the results with our current h
+            k= calc_k(h)
+            un_good= u[n-1] + h * b.T @ k
+            un_bad= u[n-1] + h * b_bad.T @ k
+            # infinity norm :D
+            e= np.max(np.abs(un_good - un_bad))
+            E= atol + rtol * np.max(np.abs(un_good))
+
+            # if the acceptance criterion is satisfied, accept the current step
+            if e < E:
+                u[n]= un_good
+                t[n]= t[n-1] + h
+                h_hist[n]= h
+
+                n += 1
+            # either way, update to a new h
+            # add a bit to e to avoid a divide by zero, and limit growth to a factor of 2 each time
+            h *= (E / (e + 1e-15))**(1/order) * 0.9
+
+        # note that we only return the parts of the array we wrote to
+        return t[:n],u[:n],h_hist[:n]
+
+    else:
+        # compute the values for each time
+        for n in range(1, n_max):
+            # if n % 100000 == 0:
+            #     print(f'{n=}')
+            # our initial guess for the solver will simply be f(t,u) (since kj are attempting to approximate this)
+            k0= f(t[n-1], u[n-1])
+            k= calc_k(h)
+            u[n]= u[n-1] + h * b.T @ k
+
+        return t, u
+            
+
 
 def newton(f, fprime, x0, max_iter=20, atol=1e-12, args=()):
     '''
