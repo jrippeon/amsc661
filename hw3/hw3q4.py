@@ -67,6 +67,10 @@ ax2.set(
 # %%
 # plot step length
 fig3, ax3= plt.subplots()
-ax3.scatter(u[:,0], u[:,1], c=np.log(h))
+# ax3.scatter(u[:,0], u[:,1],c=np.log(h))
+
+# ax3.scatter(t, u[:,0],c=np.log(h))
+
+ax3.scatter(t, u[:,1],c=np.log(h))
 
 # %%

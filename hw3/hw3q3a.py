@@ -63,12 +63,16 @@ for m_idx,method in enumerate(methods):
         ts[(method, h)]= t
         us[(method, h)]= u
 #%%
+markers= ['+', 'x', '.']
 fig, ax= plt.subplots(len(h_values), len(y0))
 for m_idx,method in enumerate(methods):
     for h_idx, h in enumerate(h_values):
         t= ts[(method, h)]
         u= us[(method, h)]
         for dim_idx in range(len(y0)):
+            # # only plot one point a second
+            # density= int(1/h)
+            # ax[dim_idx, h_idx].plot(t[::density], u[::density,dim_idx], marker=markers[m_idx])
             ax[dim_idx, h_idx].plot(t, u[:,dim_idx])
 
             # label time at the bottom
