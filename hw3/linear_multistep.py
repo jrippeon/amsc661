@@ -1,12 +1,15 @@
 import numpy as np
 from rk import dirk, newton
 
+# note: there is some bug with this. See the report and how my BDF plots don't align with the RK ones
 def linear_multistep(func, t_span, y0, h, a, b, b_1=None, dfdy=None):
     '''
     Implement constant order constant timestep linear multistep method with given coefficients.
 
     u[n+1] + a[0] * u[n] + a[1] * u[n-1] + ... + a[k-1] * u[n-k+1] = h * (b_1 * f[n+1] + b[0] * f[n] + ... + b[k-1] * f[n-k+1])
     '''
+
+    print('CAUTION: This function is broken. There is some issue with the algorithm. See the comparison to DIRK2 on the Robertson problem.')
 
     # k is the number of steps
     k,= a.shape
