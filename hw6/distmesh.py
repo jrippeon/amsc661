@@ -139,7 +139,7 @@ def visualize_SDF(f, xmin, xmax, ymin, ymax, n_x, n_y):
 
 def visualize_result(pts, tri):
     fig, ax= plt.subplots()
-    ax.scatter(pts[:,0], pts[:,1])
+    # ax.scatter(pts[:,0], pts[:,1])
     ax.triplot(pts[:,0],pts[:,1],tri,linewidth=0.5)
     ax.set_aspect('equal')
     return fig, ax

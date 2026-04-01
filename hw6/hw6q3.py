@@ -5,12 +5,13 @@ import matplotlib.pyplot as plt
 import fem
 from importlib import reload
 reload(fem)
+reload(dm)
 
 #%%#############################################################################
 # Generate the mesh
 ################################################################################
 
-h= 0.025
+h= 0.1
 
 def fh(p):
     p= np.array(p)
@@ -38,6 +39,13 @@ circle_bdy= circle_bdy.T
 offset= np.array([1.5, 1.5])
 circle_bdy += offset
 
+# to test the effect of not fixing the boundary points
+# pfix_none= np.array([
+#     [0, 0],
+#     [0,3],
+#     [3,0],
+#     [3,3]
+# ])
 # create the mesh (with circle boundary points remaining fixed)
 
 pts, tri= dm.distmesh2D(
@@ -55,27 +63,41 @@ tol= 1e-6
 D0_idx= np.nonzero(pts[:,0] < tol)
 D1_idx= np.nonzero(pts[:,0] > 3 - tol)
 
-# visualize the mesh created (fixed points in red, boundry points in black)
-
-dm.visualize_result(pts, tri)
-plt.scatter(circle_bdy[:,0], circle_bdy[:,1], c='r')
-plt.scatter(pts[D0_idx, 0], pts[D0_idx, 1], c='k')
-plt.scatter(pts[D1_idx, 0], pts[D1_idx, 1], c='k')
-plt.show()
-
 #%%#############################################################################
 # Load a way better mesh I precomputed
 ################################################################################
-pts= np.savetxt('pts.csv')
-tri= np.savetxt('tri.csv')
-# pts= np.loadtxt('pts.csv')
-# tri= np.loadtxt('tri.csv')
+# pts= np.savetxt('pts2.csv', pts)
+# tri= np.savetxt('tri2.csv', tri, fmt='%d')
+pts= np.loadtxt('pts.csv')
+tri= np.loadtxt('tri.csv', dtype=np.int64)
+
+# find the Dirichlet bdy points
+tol= 1e-6
+# find the indices on the left edge of the square
+D0_idx= np.nonzero(pts[:,0] < tol)
+D1_idx= np.nonzero(pts[:,0] > 3 - tol)
+
+circle_bdy_indices= np.isclose(np.linalg.norm(pts - offset, axis= 1), 1, atol=tol)
+circle_bdy= pts[circle_bdy_indices]
+
+#%%#############################################################################
+# visualize the mesh created (fixed points in red, boundry points in black)
+################################################################################
+
+dot_size=1
+
+dm.visualize_result(pts, tri)
+plt.scatter(pts[:,0], pts[:,1], s=0.5*dot_size)
+plt.scatter(circle_bdy[:,0], circle_bdy[:,1], c='r', s=dot_size)
+plt.scatter(pts[D0_idx, 0], pts[D0_idx, 1], c='k', s=dot_size)
+plt.scatter(pts[D1_idx, 0], pts[D1_idx, 1], c='k', s=dot_size)
+plt.show()
 
 #%%#############################################################################
 # Compute the solution
 ################################################################################
 
-a_inner= 1.2
+a_inner= 0.8
 a_outer= 1
 
 dirichlet_bdy_segments=[
@@ -104,11 +126,32 @@ u= fem.laplace_advanced(pts, tri, a, dirichlet_bdy_segments)
 # Plot the voltage
 ################################################################################
 plt.tricontourf(pts[:,0], pts[:,1], tri, u, 100)
+# plt.triplot(pts[:,0],pts[:,1],tri,linewidth=0.5, c='k', alpha=0.3)
+plt.gca().set_aspect('equal')
+plt.title(f'Voltage $v$ with $a_1 = {a_inner}$ and $a_2 = {a_outer}$')
 plt.colorbar()
 plt.show()
 
+
 #%%#############################################################################
-# Plot the current density on each vertix
+# Plot the gradient
+################################################################################
+du= fem.grad(pts, tri, u, faces=True)
+plt.tripcolor(pts[:,0], pts[:,1], tri, np.linalg.norm(du, axis=1))
+plt.show()
+#%%#############################################################################
+# Plot the current density calculated properly
+################################################################################
+j_vertices= fem.flux_density(pts, tri, u, a)
+
+plt.tricontourf(pts[:,0], pts[:,1], tri, j_vertices, 250, cmap='viridis')
+# plt.triplot(pts[:,0],pts[:,1],tri,linewidth=0.5, c='k', alpha=0.3)
+plt.gca().set_aspect('equal')
+plt.title(f'Current density $j$ with $a_1 = {a_inner}$ and $a_2 = {a_outer}$')
+plt.colorbar()
+plt.show()
+#%%#############################################################################
+# Plot the current density incorrectly (my first attempt)
 ################################################################################
 du= fem.grad(pts, tri, u)
 a_matrix= a(pts)
@@ -117,38 +160,3 @@ plt.tricontourf(pts[:,0], pts[:,1], tri, j, 250, cmap='viridis')
 # plt.tripcolor(pts[:,0], pts[:,1], tri, j, shading='gouraud', cmap='viridis')
 plt.colorbar()
 plt.show()
-
-#%%#############################################################################
-# plot current density on the interior of each triangle (removes artifact?)
-################################################################################
-du_faces= fem.grad(pts, tri, u, faces=True)
-
-# generate j at the centers of triangles
-Ntris= tri.shape[0]
-centers= np.zeros((Ntris, 2))
-for j in range(Ntris):
-    indices= tri[j,:]
-    verts= pts[indices, :]
-    center= np.sum(verts, axis=0) / 3
-    centers[j, :]= center
-
-a_centers= a(centers)
-j_centers= a_centers * np.linalg.norm(du_faces, axis=1)
-
-# now compute j at the vertices by averaging
-Npts= pts.shape[0]
-N_adjacent= np.zeros(Npts)
-j_vertices= np.zeros(Npts)
-for j in range(Ntris):
-    indices= tri[j,:]
-    verts= pts[indices, :]
-    N_adjacent[indices] += 1
-    j_vertices[indices] += j_centers[j]
-
-j_vertices /= N_adjacent
-
-
-plt.tricontourf(pts[:,0], pts[:,1], tri, j_vertices, 250, cmap='viridis')
-plt.colorbar()
-plt.show()
-# %%

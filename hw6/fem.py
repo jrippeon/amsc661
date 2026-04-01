@@ -112,9 +112,9 @@ def laplace_advanced(pts, tri, a, dirichlet_bdy_segments):
     b -= A @ u
 
     # solve for the free values in u
-    # A_sparse= scipy.sparse.csr_matrix(A[np.ix_(free_indices, free_indices)])
-    # u[free_indices]= scipy.sparse.spsolve(A_sparse, b[free_indices])
-    u[free_indices]= np.linalg.solve(A[np.ix_(free_indices, free_indices)], b[free_indices])
+    A_sparse= scipy.sparse.csr_matrix(A[np.ix_(free_indices, free_indices)])
+    u[free_indices]= scipy.sparse.linalg.spsolve(A_sparse, b[free_indices])
+    # u[free_indices]= np.linalg.solve(A[np.ix_(free_indices, free_indices)], b[free_indices])
 
     return u
         
@@ -159,4 +159,44 @@ def grad(pts, tri, u, faces=False):
     return du_faces if faces else du
 
 
-        
+def flux_density(pts, tri, u, a):
+    '''
+    Given a solution to -∇ * a ∇u = 0,
+    calculate the flux density j = a ∇u at each vertex.
+    '''
+    du_faces= grad(pts, tri, u, faces=True)
+
+    # generate j at the centers of triangles
+    Ntris= tri.shape[0]
+    centers= np.zeros((Ntris, 2))
+    for j in range(Ntris):
+        indices= tri[j,:]
+        verts= pts[indices, :]
+        center= np.sum(verts, axis=0) / 3
+        centers[j, :]= center
+
+    a_centers= a(centers)
+    j_centers= a_centers * np.linalg.norm(du_faces, axis=1)
+
+    # now compute j at the vertices by averaging
+    Npts= pts.shape[0]
+    # N_adjacent= np.zeros(Npts)
+    area_adjacent= np.zeros(Npts)
+    j_vertices= np.zeros(Npts)
+    for j in range(Ntris):
+        indices= tri[j,:]
+        verts= pts[indices, :]
+        B= np.ones((3,3))
+        B[:, 1:3]= verts
+        area= 0.5 * np.linalg.det(B)
+        # N_adjacent[indices] += 1
+        # j_vertices[indices] += j_centers[j]
+        # area weighting 
+        area_adjacent[indices] += area
+        j_vertices[indices] += area * j_centers[j]
+
+    # j_vertices /= N_adjacent
+    j_vertices /= area_adjacent
+
+    return j_vertices
+            
