@@ -83,44 +83,6 @@ with pygmsh.geo.Geometry() as geom:
 tri = mesh.cells_dict["triangle"]
 pts = mesh.points[:, :2]  # ignore z
 
-# plt.figure()
-# plt.triplot(pts[:,0], pts[:,1], tri,linewidth = 0.5)
-# # plt.scatter(pts[Bdry,0],pts[Bdry,1],c = 'red')
-# plt.gca().set_aspect('equal')
-# plt.title("Triangulation of the star-shaped region")
-
-# Find boundary nodes and interior nodes
-Npts = np.size(pts,axis = 0)
-Ntri = np.size(tri,axis = 0)
-print(f"Npts = {Npts}, Ntri = {Ntri}")
-
-Nedges = Ntri*3
-edges = np.zeros((Nedges,2),dtype = int)
-for j in range(Ntri):
-    t = tri[j,:]
-    edges[3*j,:] = np.sort(np.array([t[0],t[1]]))
-    edges[3*j+1,:] = np.sort(np.array([t[0],t[2]]))
-    edges[3*j+2,:] = np.sort(np.array([t[1],t[2]]))
-
-# Indices of boundary points
-unique_edges, counts = np.unique(edges, axis=0, return_counts=True)
-ind = np.argwhere(counts == 1)
-Bdry = np.unique(unique_edges[ind,:].ravel())
-
-# Indices of interior points
-# Note that pts contains not only mesh points 
-# but also points on the boundary curve that did not become part of the mesh
-mesh_pts = np.unique(unique_edges.ravel())
-Interior = np.setdiff1d(mesh_pts,Bdry)
-
-# plt.figure()
-# plt.triplot(pts[:,0], pts[:,1], tri,linewidth = 0.5)
-# plt.scatter(pts[Bdry,0],pts[Bdry,1],s = 2, c = 'red')
-# # plt.scatter(pts[:,0],pts[:,1],s = 0.5, c = 'blue')
-# plt.scatter(pts[Interior,0],pts[Interior,1],s = 1, c = 'black')
-# plt.gca().set_aspect('equal')
-# plt.show()
-
 #%%#############################################################################
 # Find the boundary points (my way)
 ################################################################################
@@ -132,13 +94,15 @@ r_values= np.linalg.norm(pts, axis=-1)
 r_exact= star_curve_rad(phi_values)
 bdy_tol= 1e-1
 
-# assume a point is in the boundary if it's less than h/10 from the boundary
+# assume a point is in the boundary if it's less than h * tol from the boundary
 Bdry= (np.abs(r_exact - r_values) < h_mesh * bdy_tol)
 
 
 #%%#############################################################################
 # Parameterization of the boundary.
 ################################################################################
+
+# because I did things a funny way you need a bunch of extra nonsense
 
 def star_curve_ddrad(t):
     return -r2 * m_star**2 * np.cos(m_star*t)
@@ -186,69 +150,45 @@ t= np.delete(t, -1) # we double-counted 2pi = 0 (mod 2pi) lol
 
 x= G(t)
 
-# plt.scatter(x[:,0], x[:,1])
-# plt.show()
 #%%#############################################################################
+# Compute σ
+################################################################################
 
 sigma= bie.sigma_value(G, dG, ddG, normal, f, t)
-print(f'{sigma.shape=}')
 
 #%%#############################################################################
-# x= pts
-# u= bie.eval_point(
-#     x=x,
-#     G=G,
-#     dG=dG,
-#     normal=normal,
-#     sigma=sigma,
-#     t=t
-# )
-
-u= np.zeros(Npts)
-
-for i,x in enumerate(pts):
-    u[i]= bie.eval_point(
-        x=x,
+# Plot u
+################################################################################
+u= bie.eval_point(
+        x=pts,
         G=G,
         dG=dG,
         normal=normal,
         sigma=sigma,
         t=t
-    )
-
-# # fix the boundary
-# for j in range(np.size(Bdry)):
-#     ind= Bdry[j]
-#     x= pts[ind]
-#     phi= np.arctan2(x[1], x[0])
-#     u[ind]= bdry_func(phi)
+)
 
 phi= np.atan2(pts[Bdry, 1], pts[Bdry, 0])
 r= star_curve_rad(phi)
 u[Bdry]= exact_sol(r, phi)
-#%%#############################################################################
 
 plt.tricontourf(pts[:,0], pts[:,1], tri, u, levels=200, cmap='turbo')
 plt.colorbar()
 plt.show()
 
 #%%#############################################################################
-# ERROR
+# Plot error
 ################################################################################
 
-u_exact= np.zeros((Npts,))
-for j in range(Npts):
-    x= pts[j]
-    phi= np.arctan2(x[1], x[0])
-    r= np.linalg.norm(x)
-    u_exact[j]= exact_sol(r, phi)
+# compute the exact solution and print the error
 
+phi= np.atan2(pts[:, 1], pts[:, 0])
+r= np.linalg.norm(pts, axis=-1)
+u_exact= exact_sol(r, phi)
 
 error= u_exact - u
 
-#%%#############################################################################
-
-plt.tricontourf(pts[:,0], pts[:,1], tri, error, levels=200, cmap='turbo')
+plt.tricontourf(pts[:,0], pts[:,1], tri, error, levels=200, cmap='coolwarm')
 plt.colorbar()
 plt.show()
 
@@ -274,24 +214,18 @@ t_fine= np.delete(t_fine, -1)
 sigma_fine= np.delete(sigma_fine, -1)
 N_bdy_points_fine= np.size(t_fine)
 #%%#############################################################################
-u_fine= np.zeros(Npts)
+# Plot error again
+################################################################################
 
-for i,x in enumerate(pts):
-    u_fine[i]= bie.eval_point(
-        x=x,
-        G=G,
-        dG=dG,
-        normal=normal,
-        sigma=sigma_fine,
-        t=t_fine
-    )
+u_fine= bie.eval_point(
+    x=pts,
+    G=G,
+    dG=dG,
+    normal=normal,
+    sigma=sigma_fine,
+    t=t_fine
+)
 
-# # fix the boundary
-# for j in range(np.size(Bdry)):
-#     ind= Bdry[j]
-#     x= pts[ind]
-#     phi= np.arctan2(x[1], x[0])
-#     u_fine[ind]= bdry_func(phi)
 
 phi_bdry= np.atan2(pts[Bdry, 1], pts[Bdry, 0])
 r_bdry= np.linalg.norm(pts[Bdry], axis=-1)
@@ -302,19 +236,13 @@ u_fine[Bdry]= exact_sol(r_bdry, phi_bdry)
 # phi_bdry= np.atan2(pts[Bdry, 1], pts[Bdry, 0])
 # u_fine[Bdry]= bdry_func(phi_bdry)
 
-
-#%%#############################################################################
 error_fine= u_exact - u_fine
-tol= 1e-4
-problems= np.abs(error_fine) > tol
 
 plt.tricontourf(pts[:,0], pts[:,1], tri, error_fine, levels=200, cmap='coolwarm')
 plt.colorbar()
-# plt.scatter(pts[Bdry, 0], pts[Bdry, 1], c='b', s=50, zorder=995)
-plt.scatter(pts[problems, 0], pts[problems, 1], c='r', s=100, alpha=0.5, zorder=990)
-plt.scatter(pts[:, 0], pts[:, 1], c='k', s=5, zorder=999)
+# # plt.scatter(pts[Bdry, 0], pts[Bdry, 1], c='b', s=50, zorder=995)
+# plt.scatter(pts[problems, 0], pts[problems, 1], c='r', s=100, alpha=0.5, zorder=990)
+# plt.scatter(pts[:, 0], pts[:, 1], c='k', s=5, zorder=999)
 plt.show()
 # %%
 plt.plot(t_fine, sigma_fine)
-
-# %%
