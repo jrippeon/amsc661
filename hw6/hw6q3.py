@@ -39,13 +39,6 @@ circle_bdy= circle_bdy.T
 offset= np.array([1.5, 1.5])
 circle_bdy += offset
 
-# to test the effect of not fixing the boundary points
-# pfix_none= np.array([
-#     [0, 0],
-#     [0,3],
-#     [3,0],
-#     [3,3]
-# ])
 # create the mesh (with circle boundary points remaining fixed)
 
 pts, tri= dm.distmesh2D(
@@ -66,8 +59,6 @@ D1_idx= np.nonzero(pts[:,0] > 3 - tol)
 #%%#############################################################################
 # Load a way better mesh I precomputed
 ################################################################################
-# pts= np.savetxt('pts2.csv', pts)
-# tri= np.savetxt('tri2.csv', tri, fmt='%d')
 pts= np.loadtxt('pts.csv')
 tri= np.loadtxt('tri.csv', dtype=np.int64)
 
@@ -97,7 +88,7 @@ plt.show()
 # Compute the solution
 ################################################################################
 
-a_inner= 0.8
+a_inner= 1.2
 a_outer= 1
 
 dirichlet_bdy_segments=[
