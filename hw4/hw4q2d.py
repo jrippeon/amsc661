@@ -13,9 +13,9 @@ period= 2 * np.pi * a**(3/2)
 # I want this to be able to handle a (N,d) array of N different p values
 def T(p):
     if p.ndim == 1:
-        return 1/2 * np.linalg.norm(p)
+        return 1/2 * np.linalg.norm(p)**2
     else:
-        return 1/2 * np.linalg.norm(p, axis=1)
+        return 1/2 * np.linalg.norm(p, axis=1)**2
 def U(q):
     if q.ndim == 1:
         return - 1 / np.linalg.norm(q)
