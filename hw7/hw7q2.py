@@ -110,43 +110,36 @@ def star_curve_ddrad(t):
 # I redefine these functions to be a bit more vectorized
 def G(t):
     r= star_curve_rad(t)
-    x0= r * np.cos(t)
-    x1= r * np.sin(t)
-
-    return np.array([x0, x1]).T
+    x= r * np.exp(1j * t)
+    return np.array([x.real, x.imag]).T
 
 def dG(t):
     r= star_curve_rad(t)
     dr= star_curve_drad(t)
-    dx0= - r * np.sin(t) + dr * np.cos(t)
-    dx1= r * np.cos(t) + dr * np.sin(t)
-
-    return np.array([dx0, dx1]).T
+    x= (dr + r * 1j) * np.exp(1j * t)
+    return np.array([x.real, x.imag]).T
 
 def ddG(t):
     r= star_curve_rad(t)
     dr= star_curve_drad(t)
     ddr= star_curve_ddrad(t)
-
-    ddx0= (ddr - r) * np.cos(t) - 2 * dr * np.sin(t)
-    ddx1= (ddr - r) * np.sin(t) + 2 * dr * np.cos(t)
-    return np.array([ddx0, ddx1]).T
-
+    x= (ddr + 2j * dr - r) * np.exp(1j * t)
+    return np.array([x.real, x.imag]).T
+    
 def normal(t):
-    speed= np.linalg.norm(dG(t), axis=-1)
-    r= star_curve_rad(t)
-    dr= star_curve_drad(t)
-    n0= (r * np.cos(t) + dr * np.sin(t)) / speed
-    n1= (r * np.sin(t) - dr * np.cos(t)) / speed
-    return np.array([n0, n1]).T
+    dGval= dG(t)
+    dx= dGval[:,0] + 1j * dGval[:,1]
+    x= -1j * dx / np.abs(dx)
+    result= np.array([x.real, x.imag]).T
+    return result
 
 def f(t):
     return 1 + (r1 + r2 * np.cos(m_star * t))**3 * np.cos(3 * t)
 
 N_bdy_points= 200
 
-t= np.linspace(0, 2 * np.pi, N_bdy_points + 1)
-t= np.delete(t, -1) # we double-counted 2pi = 0 (mod 2pi) lol
+t= np.linspace(0, 2 * np.pi, N_bdy_points, endpoint=False)
+# t= np.delete(t, -1) # we double-counted 2pi = 0 (mod 2pi) lol
 
 x= G(t)
 
@@ -168,11 +161,11 @@ u= bie.eval_point(
         t=t
 )
 
-phi= np.atan2(pts[Bdry, 1], pts[Bdry, 0])
-r= star_curve_rad(phi)
-u[Bdry]= exact_sol(r, phi)
+phi_bdry= np.atan2(pts[Bdry, 1], pts[Bdry, 0])
+r_bdry= np.linalg.norm(pts[Bdry], axis=-1)
+u[Bdry]= exact_sol(r_bdry, phi_bdry)
 
-plt.tricontourf(pts[:,0], pts[:,1], tri, u, levels=200, cmap='turbo')
+plt.tricontourf(pts[:,0], pts[:,1], tri, u, levels=200, cmap='magma')
 plt.colorbar()
 plt.show()
 
@@ -186,7 +179,7 @@ phi= np.atan2(pts[:, 1], pts[:, 0])
 r= np.linalg.norm(pts, axis=-1)
 u_exact= exact_sol(r, phi)
 
-error= u_exact - u
+error= u - u_exact
 
 plt.tricontourf(pts[:,0], pts[:,1], tri, error, levels=200, cmap='coolwarm')
 plt.colorbar()
@@ -195,23 +188,7 @@ plt.show()
 #%%#############################################################################
 # Interpolate σ to more points
 ################################################################################
-
-# we need to add one more point to use the interpolation with periodic BC
-t_aux= np.zeros((N_bdy_points + 1,))
-sigma_aux= np.zeros((N_bdy_points + 1,))
-t_aux[:N_bdy_points]= t
-t_aux[-1]= 2 * np.pi
-sigma_aux[:N_bdy_points]= sigma
-sigma_aux[-1]= sigma_aux[0]
-
-# magic stuff from scipy
-cs= CubicSpline(t_aux, sigma_aux, bc_type='periodic')
-
-# create a finer mesh
-t_fine= np.linspace(0, 2*np.pi, 10 * N_bdy_points + 1)
-sigma_fine= cs(t_fine)
-t_fine= np.delete(t_fine, -1)
-sigma_fine= np.delete(sigma_fine, -1)
+t_fine, sigma_fine= bie.refine_sigma(t, sigma, 10)
 N_bdy_points_fine= np.size(t_fine)
 #%%#############################################################################
 # Plot error again
@@ -236,13 +213,8 @@ u_fine[Bdry]= exact_sol(r_bdry, phi_bdry)
 # phi_bdry= np.atan2(pts[Bdry, 1], pts[Bdry, 0])
 # u_fine[Bdry]= bdry_func(phi_bdry)
 
-error_fine= u_exact - u_fine
+error_fine= u_fine - u_exact
 
 plt.tricontourf(pts[:,0], pts[:,1], tri, error_fine, levels=200, cmap='coolwarm')
 plt.colorbar()
-# # plt.scatter(pts[Bdry, 0], pts[Bdry, 1], c='b', s=50, zorder=995)
-# plt.scatter(pts[problems, 0], pts[problems, 1], c='r', s=100, alpha=0.5, zorder=990)
-# plt.scatter(pts[:, 0], pts[:, 1], c='k', s=5, zorder=999)
 plt.show()
-# %%
-plt.plot(t_fine, sigma_fine)
