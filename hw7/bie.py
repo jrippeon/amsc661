@@ -1,13 +1,13 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.interpolate import CubicSpline
 
 
 def d(x,y,normal):
     '''
     Given x of size (N, 2), y of size (M,2), returns the (N, M) matrix 
     of all the pairwise d(x,y) = n(y) * (x-y) / (2 π |x - y|^2) values.
-    Note that of courjo
-    se we require a (M,2) array of normal(y) values.
+    Note that of course we require a (M,2) array of normal(y) values.
     '''
     # regularize the inputs no they don't immediately crash our code
     x= np.atleast_2d(x)
@@ -42,11 +42,14 @@ def d(x,y,normal):
 # as normal : [0, T] --> R^2
 
 
-def sigma_value(G, dG, ddG, normal, f, t):
+def sigma_value(G, dG, ddG, normal, f, t, exterior=False):
     '''
     Get the value of σ on the boundary at points specified by t,
     by approximately solving (-0.5 I + D)σ = f.
     Here, D is the double layer operator.
+
+    If `exterior`, then we are solving the exterior problem, 
+    which necessitates a slight change in the equations.
     '''
     N= len(t)
 
@@ -68,10 +71,17 @@ def sigma_value(G, dG, ddG, normal, f, t):
     d_diag= (dx[:, 1] * ddx[:, 0] - dx[:, 0] * ddx[:, 1]) / (4 * np.pi * speed**3)
 
     np.fill_diagonal(D, d_diag * speed * h)
-
     I= np.eye(N)
 
-    A= D - 0.5 * I
+    # in the exterior problem we also have an additional term:
+    # -1/2π ∫ log|x_i| |G'(t_j)| σ(x_j) dt ≈ Σ_j -h/2π log|x_i| |G'(t_j)| σ(x_j)
+    # gives B[i,j] = -h/2π log|x_i| |G'(t_j)|
+    if exterior:
+        log= np.log(np.linalg.norm(x, axis=-1))
+        B= -h / (2 * np.pi) * log[:, None] * speed[None, :]
+        A= D + 0.5 * I + B
+    else:
+        A= D - 0.5 * I
 
     f_vec= f(t)
 
@@ -79,7 +89,7 @@ def sigma_value(G, dG, ddG, normal, f, t):
 
     return sigma
 
-def eval_point(x, G, dG, normal, sigma, t):
+def eval_point(x, G, dG, normal, sigma, t, exterior=False):
     '''
     Evaluate the value of u(x), based on a computed σ and parameterization.
     '''
@@ -91,9 +101,40 @@ def eval_point(x, G, dG, normal, sigma, t):
     n= normal(t)
     speed= np.linalg.norm(dy, axis=-1)
 
-    # x.shape == (N, 2), y.shape == (M, 2), want (N,) array of u(x)
-    #         (N, M)  *       (1, M)   *      (1, M)
-    summand= d(x,y,n) * sigma[None, :] * speed[None, :] * h
+    if exterior:
+        c_times_log= - 1 / (2 * np.pi) * np.log(np.linalg.norm(x, axis=-1))
+        summand= (
+            (d(x,y,n) + c_times_log[:, None]) 
+            * sigma[None, :] * speed[None, :] * h
+        )
+    else:
+        # x.shape == (N, 2), y.shape == (M, 2), want (N,) array of u(x)
+        #         (N, M)  *       (1, M)   *      (1, M)
+        summand= d(x,y,n) * sigma[None, :] * speed[None, :] * h
     result= np.sum(summand, axis=-1)
 
     return result
+
+def refine_sigma(t, sigma, k):
+    '''
+    Given a σ, compute a refinement with k times as many points.
+    '''
+    N= np.size(t)
+    # we need to add one more point to use the interpolation with periodic BC
+    t_aux= np.zeros((N + 1,))
+    sigma_aux= np.zeros((N + 1,))
+    t_aux[:N]= t
+    t_aux[-1]= 2 * np.pi
+    sigma_aux[:N]= sigma
+    sigma_aux[-1]= sigma_aux[0]
+
+    # magic stuff from scipy
+    cs= CubicSpline(t_aux, sigma_aux, bc_type='periodic')
+
+    # create a finer mesh
+    t_fine= np.linspace(0, 2*np.pi, k * N + 1)
+    sigma_fine= cs(t_fine)
+    t_fine= np.delete(t_fine, -1)
+    sigma_fine= np.delete(sigma_fine, -1)
+
+    return t_fine, sigma_fine
