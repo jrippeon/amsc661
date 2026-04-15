@@ -5,9 +5,8 @@ from scipy.interpolate import CubicSpline
 
 def d(x,y,normal):
     '''
-    Given x of size (N, 2), y of size (M,2), returns the (N, M) matrix 
+    Given x of size (N, 2), y and normal of size (M,2), returns the (N, M) matrix 
     of all the pairwise d(x,y) = n(y) * (x-y) / (2 π |x - y|^2) values.
-    Note that of course we require a (M,2) array of normal(y) values.
     '''
     # regularize the inputs no they don't immediately crash our code
     x= np.atleast_2d(x)
