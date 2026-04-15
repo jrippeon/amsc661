@@ -165,7 +165,15 @@ phi_bdry= np.atan2(pts[Bdry, 1], pts[Bdry, 0])
 r_bdry= np.linalg.norm(pts[Bdry], axis=-1)
 u[Bdry]= exact_sol(r_bdry, phi_bdry)
 
+t_extended= np.linspace(0, 2 * np.pi, N)
 plt.tricontourf(pts[:,0], pts[:,1], tri, u, levels=200, cmap='magma')
+plt.plot(G(t_extended)[:,0], G(t_extended)[:,1], c='k')
+plt.gca().set(
+    title='BIE solution to the BVP'
+)
+window_size=2.5
+plt.xlim([-window_size,window_size])
+plt.ylim([-window_size,window_size])
 plt.colorbar()
 plt.show()
 
@@ -182,6 +190,12 @@ u_exact= exact_sol(r, phi)
 error= u - u_exact
 
 plt.tricontourf(pts[:,0], pts[:,1], tri, error, levels=200, cmap='coolwarm')
+plt.plot(G(t_extended)[:,0], G(t_extended)[:,1], c='k')
+plt.gca().set(
+    title='Error vs. Exact solution, original $\sigma$'
+)
+plt.xlim([-window_size,window_size])
+plt.ylim([-window_size,window_size])
 plt.colorbar()
 plt.show()
 
@@ -216,5 +230,11 @@ u_fine[Bdry]= exact_sol(r_bdry, phi_bdry)
 error_fine= u_fine - u_exact
 
 plt.tricontourf(pts[:,0], pts[:,1], tri, error_fine, levels=200, cmap='coolwarm')
+plt.plot(G(t_extended)[:,0], G(t_extended)[:,1], c='k')
+plt.gca().set(
+    title='Error vs. Exact solution, refined $\sigma$'
+)
+plt.xlim([-window_size,window_size])
+plt.ylim([-window_size,window_size])
 plt.colorbar()
 plt.show()
