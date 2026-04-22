@@ -2,6 +2,7 @@ import numpy as np
 from math import factorial
 from scipy.sparse import coo_matrix
 from scipy.sparse.linalg import spsolve
+from itertools import product
 
 
 ### PROCEDURE CHANGE ###
@@ -114,50 +115,61 @@ def C_local(pts, tri):
 
     return C
 
-def b_vector(pts, tri, u, eps, A, B, C):
+def D_local(pts, tri):
     '''
-    'b' vector of M w = b version of DJ(u_n, η_i; w) = J(u_n, η_i)
-
-    I.e. b_i = ε∫ ∇u * ∇η_i dx - ∫ (u-u^3)η_i dx
-             = ε Σ u_j A_ij - Σ u_j Bij + Σ u_j u_k u_l C_ijkl
+    Given a triangulation, returns the D vector given by:
+    D_ni = ∫_{T_n}  η_i dx
     '''
-    Npts= pts.shape[0]
-    Ntri= tri.shape[0]
-    # get the u value at each vertex, shape (Ntri, 3) 
-    u_local= u[tri]
-    Au= np.einsum('nij,nj->ni', A, u_local)
-    Bu= np.einsum('nij,nj->ni', B, u_local)
-    Cuuu= np.einsum('nijkl,nj,nk,nl-> ni', C, u_local, u_local, u_local)
+    T= triangle_matrix(pts, tri)
+    dets= np.abs(np.linalg.det(T))
 
-    b_local= eps * Au - Bu + Cuuu
-
-    # now assemble into one b vector
-    b= np.zeros(Npts)
-
-    # flatten tri and b_local from (Ntri, 3) to (Ntri*3,)
-    indices= tri.flatten() 
-    b_local_flat= b_local.flatten()
-    # add b_local entries to b at the indices from tri
-    np.add.at(b, indices, b_local_flat)
-
-    return b
-
-
-def M_matrix(pts, tri, u, eps, A, B, C):
+def T_local(pts, tri, n):
     '''
-    'M' matrix of M w = b version of DJ(u_n, η_i; w) = J(u_n, η_i)
+    Given a triangulation, construct the T_local array of shape (Ntri, 3, 3, ..., 3),
+    C_nijkl = ∫_{T_n}  η_{i_1} * η_{i_2} * ... * η_{i_n} dx
 
-    I.e. Mw = ε∫ ∇η_i * ∇w dx - ∫ (1-3u^2) η_iw dx
-            = Σ w_j (ε A_ij - B_ij + 3 Σ u_k u_l C_ijkl)
-    so   M_ij = ε A_ij - B_ij + 3 Σ u_k u_l C_ijkl
+    Arises from a formula
+    ∫_T  η_1^a * η_2^b * η_3^c dx = 2|T| /(a+b+c+2)! a!b!c!
     '''
+
     Npts= pts.shape[0]
     Ntri= tri.shape[0]
 
-    u_local= u[tri]
-    Cuu= np.einsum('nijkl,nk,nl->nij', C, u_local, u_local)
+    # (Ntri, 3, 2) array of the coordinates of each point
+    vertices= pts[tri]
 
-    M_local= eps * A - B + 3 * Cuu
+    tri_matrix= triangle_matrix(pts, tri)
+    dets= np.abs(np.linalg.det(tri_matrix))
+
+    coeffs_shape= n * (3,)
+    coeffs_shape= tuple(coeffs_shape)
+    coeffs= np.zeros(coeffs_shape)
+
+    for indices in product([0,1,2], repeat=n):
+        a= indices.count(0)
+        b= indices.count(1)
+        c= indices.count(2)
+        coeffs[tuple(indices)]= factorial(a) * factorial(b) * factorial(c) / factorial(2 + a + b + c)
+
+    # now we need to broadcast these two things together, with final
+    # shape (Ntri, 3, 3, ..., 3)
+    dets_shape= (Ntri,) + (1,) * n
+    coeffs_shape= (1,) + coeffs_shape
+    dets= dets.reshape(dets_shape)
+    coeffs= coeffs.reshape(coeffs_shape)
+
+    T_local= dets * coeffs
+
+    return T_local
+
+
+def flatten_matrix(pts, tri, M_local):
+    '''
+    Given a (Ntri, 3, 3) stack of matrices M_local, "flatten" them into one
+    (Npts, Npts) matrix by summing the contributions to each vertex from each face.
+    '''
+    Npts= pts.shape[0]
+    Ntri= tri.shape[0]
 
     # flatten the array (AI told me how to do this efficiently lol)
     row_indices= np.zeros((Ntri, 3, 3), dtype=int)
@@ -182,6 +194,81 @@ def M_matrix(pts, tri, u, eps, A, B, C):
     M= M_coo.tocsr()
 
     return M
+
+def flatten_vector(pts, tri, b_local):
+    '''
+    Given a (Ntri, 3) stack of vectors b_local, "flatten" them into one
+    (Npts,) vector by summing the contributions to each vertex from each face.
+    '''
+    Npts= pts.shape[0]
+    Ntri= tri.shape[0]
+
+    b= np.zeros(Npts)
+
+    # flatten tri and b_local from (Ntri, 3) to (Ntri*3,)
+    indices= tri.flatten() 
+    b_local_flat= b_local.flatten()
+    # add b_local entries to b at the indices from tri
+    np.add.at(b, indices, b_local_flat)
+
+    return b
+
+
+def eval_at_midpoints(pts, tri, f):
+    '''
+    Given a mesh, evaluate the function f at the midpoints of each triangle.
+    Returns an array of shape (Ntri,).
+    '''
+    Npts= pts.shape[0]
+    Ntri= tri.shape[0]
+
+    # (Ntri, 3, 2) array of the coordinates of each point
+    vertices= pts[tri]
+    midpoints= 1/3 * (vertices[:, 0] + vertices[:, 1] + vertices[:, 2])
+
+    return f(midpoints)
+
+def GL_b_vector(pts, tri, u, eps, A, B, C):
+    '''
+    'b' vector of M w = b version of DJ(u_n, η_i; w) = J(u_n, η_i)
+
+    I.e. b_i = ε∫ ∇u * ∇η_i dx - ∫ (u-u^3)η_i dx
+             = ε Σ u_j A_ij - Σ u_j Bij + Σ u_j u_k u_l C_ijkl
+    '''
+    Npts= pts.shape[0]
+    Ntri= tri.shape[0]
+    # get the u value at each vertex, shape (Ntri, 3) 
+    u_local= u[tri]
+    Au= np.einsum('nij,nj->ni', A, u_local)
+    Bu= np.einsum('nij,nj->ni', B, u_local)
+    Cuuu= np.einsum('nijkl,nj,nk,nl-> ni', C, u_local, u_local, u_local)
+
+    b_local= eps * Au - Bu + Cuuu
+
+    b= flatten_vector(pts, tri, b_local)
+
+    return b
+
+def GL_M_matrix(pts, tri, u, eps, A, B, C):
+    '''
+    'M' matrix of M w = b version of DJ(u_n, η_i; w) = J(u_n, η_i)
+
+    I.e. Mw = ε∫ ∇η_i * ∇w dx - ∫ (1-3u^2) η_iw dx
+            = Σ w_j (ε A_ij - B_ij + 3 Σ u_k u_l C_ijkl)
+    so   M_ij = ε A_ij - B_ij + 3 Σ u_k u_l C_ijkl
+    '''
+    Npts= pts.shape[0]
+    Ntri= tri.shape[0]
+
+    u_local= u[tri]
+    Cuu= np.einsum('nijkl,nk,nl->nij', C, u_local, u_local)
+
+    M_local= eps * A - B + 3 * Cuu
+
+    M= flatten_matrix(pts, tri, M_local)
+
+    return M
+
 
 def newton(J, DJ, u_init, interior, max_iter=50, atol=1e-10):
     '''
@@ -233,10 +320,10 @@ def ginzburg_landau(pts, tri, boundary, uD=None, u_init=None, eps=1e-2):
 
     # create J and DJ functions to pass to Newtons method
     def DJ(u):
-        M= M_matrix(pts, tri, u, eps, A, B, C)
+        M= GL_M_matrix(pts, tri, u, eps, A, B, C)
         return M
     def J(u):
-        b= b_vector(pts, tri, u, eps, A, B, C)
+        b= GL_b_vector(pts, tri, u, eps, A, B, C)
         return b
 
     # if we didn't get boundary conditions, assume they're homogeneous
@@ -251,3 +338,52 @@ def ginzburg_landau(pts, tri, boundary, uD=None, u_init=None, eps=1e-2):
     u= newton(J, DJ, u_init, interior)
 
     return u
+
+def heat(pts, tri, boundary, f, u0, dt, t_max, uD=None):
+    '''
+    Solve ∂_t u = Δu + f using a trapezoidal in time approach, on a specified mesh.
+    '''
+    Npts= pts.shape[0]
+    Ntri= tri.shape[0]
+    interior= np.setdiff1d(np.arange(Npts), boundary)
+
+
+    # construct relevant matrices
+
+    A_mat_local= A_local(pts, tri)
+
+    B_mat_local= T_local(pts, tri, 2)
+
+    D_vec_local= T_local(pts, tri, 1)
+    f_vec= eval_at_midpoints(pts, tri, f)
+    D_vec_local *= f_vec[:, None]
+
+    M1_mat_local=  dt/2 * A_mat_local + B_mat_local
+    M2_mat_local= -dt/2 * A_mat_local + B_mat_local
+    M1_mat= flatten_matrix(pts, tri, M1_mat_local)
+    M2_mat= flatten_matrix(pts, tri, M2_mat_local)
+    M1_int= M1_mat[np.ix_(interior,interior)]
+    D_vec= flatten_vector(pts, tri, D_vec_local)
+
+
+    # if uD not provided assume homogeneous
+    if uD is None:
+        uD= np.zeros(len(boundary))
+
+
+    # time steps
+    t= np.arange(0, t_max, dt)
+    N= len(t)
+
+    # vector for iteration
+    u= np.zeros((N,) + u0.shape)
+    u[0]= u0
+    # make sure that the boundary conditions are in place
+    u[:, boundary]= uD
+
+    for n in range(1, N):
+        RHS= M2_mat @ u[n-1] + D_vec
+        RHS_int= RHS[interior] 
+        u[n, interior]= spsolve(M1_int, RHS_int)
+
+    return t, u
