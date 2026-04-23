@@ -61,10 +61,10 @@ def B_local(pts, tri):
     # (Ntri, 3, 2) array of the coordinates of each point
     vertices= pts[tri]
     
-    # B =   1   [x2-x1  x3-x1]   [2 1 1]
-    #      -- * [y2-y1  y3-y1] * [1 2 1]
-    #      24                    [1 1 2]
-    #                 Aux           C
+    # B =   1       [x2-x1  x3-x1]   [2 1 1]
+    #      -- * det [y2-y1  y3-y1] * [1 2 1]
+    #      24                        [1 1 2]
+    #                   Aux             C
 
     # None adds a new axis so that it broadcasts correctly across the rows
     Aux_T= vertices[:, 1:] - vertices[:, 0, None, :]
@@ -120,8 +120,7 @@ def D_local(pts, tri):
     Given a triangulation, returns the D vector given by:
     D_ni = ∫_{T_n}  η_i dx
     '''
-    T= triangle_matrix(pts, tri)
-    dets= np.abs(np.linalg.det(T))
+    return T_local(pts, tri, 1)
 
 def T_local(pts, tri, n):
     '''
@@ -382,7 +381,9 @@ def heat(pts, tri, boundary, f, u0, dt, t_max, uD=None):
     u[:, boundary]= uD
 
     for n in range(1, N):
-        RHS= M2_mat @ u[n-1] + D_vec
+        # the M1_mat @ u[n] (which currently only has the BC filled) allows the Dirichlet
+        # BC to affect the interior.
+        RHS= M2_mat @ u[n-1] + dt * D_vec - M1_mat @ u[n]
         RHS_int= RHS[interior] 
         u[n, interior]= spsolve(M1_int, RHS_int)
 
