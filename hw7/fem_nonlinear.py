@@ -1,8 +1,10 @@
 import numpy as np
+import matplotlib.pyplot as plt
 from math import factorial
 from scipy.sparse import coo_matrix
 from scipy.sparse.linalg import spsolve
 from itertools import product
+from matplotlib.animation import FuncAnimation
 
 
 ### PROCEDURE CHANGE ###
@@ -213,10 +215,12 @@ def flatten_vector(pts, tri, b_local):
     return b
 
 
-def eval_at_midpoints(pts, tri, f):
+def eval_at_midpoints(pts, tri, f, t=None):
     '''
     Given a mesh, evaluate the function f at the midpoints of each triangle.
     Returns an array of shape (Ntri,).
+
+    If passed times, we assume f(x,t), and return array of shape (N, Ntri)
     '''
     Npts= pts.shape[0]
     Ntri= tri.shape[0]
@@ -225,7 +229,8 @@ def eval_at_midpoints(pts, tri, f):
     vertices= pts[tri]
     midpoints= 1/3 * (vertices[:, 0] + vertices[:, 1] + vertices[:, 2])
 
-    return f(midpoints)
+    # I insist my f functions do the broadcasting for us, maybe a mistake
+    return f(midpoints) if t is None else f(midpoints, t)
 
 def GL_b_vector(pts, tri, u, eps, A, B, C):
     '''
@@ -338,49 +343,88 @@ def ginzburg_landau(pts, tri, boundary, uD=None, u_init=None, eps=1e-2):
 
     return u
 
-def heat(pts, tri, boundary, f, u0, dt, t_max, uD=None):
+def heat(pts, tri, boundary, u0, dt, t_max, a=None, f=None, g=None, time_dependent=False):
     '''
-    Solve ∂_t u = Δu + f using a trapezoidal in time approach, on a specified mesh.
-    '''
+    Solve ∂_t u = a(x) Δu + f using a trapezoidal in time approach, on a specified mesh.
+
+    If `time_dependent` then f and g (body heating and Dirichlet BC) must be 
+    functions of x and t rather than x.  They both take (Npts, 2) * (N) --> (N, Npts).
+    ''' # maybe f and g doing the broadcasting internally is a mistake
+
     Npts= pts.shape[0]
     Ntri= tri.shape[0]
     interior= np.setdiff1d(np.arange(Npts), boundary)
-
-
-    # construct relevant matrices
-
-    A_mat_local= A_local(pts, tri)
-
-    B_mat_local= T_local(pts, tri, 2)
-
-    D_vec_local= T_local(pts, tri, 1)
-    f_vec= eval_at_midpoints(pts, tri, f)
-    D_vec_local *= f_vec[:, None]
-
-    M1_mat_local=  dt/2 * A_mat_local + B_mat_local
-    M2_mat_local= -dt/2 * A_mat_local + B_mat_local
-    M1_mat= flatten_matrix(pts, tri, M1_mat_local)
-    M2_mat= flatten_matrix(pts, tri, M2_mat_local)
-    M1_int= M1_mat[np.ix_(interior,interior)]
-    D_vec= flatten_vector(pts, tri, D_vec_local)
-
-
-    # if uD not provided assume homogeneous
-    if uD is None:
-        uD= np.zeros(len(boundary))
-
 
     # time steps
     t= np.arange(0, t_max, dt)
     N= len(t)
 
-    # vector for iteration
+    # if no a provided assume uniform 1
+    if a is None:
+        a_local= np.ones((Ntri,))
+    else:
+        # if a number is provided just have it be constant
+        if not callable(a):
+            a_local= a * np.ones(Ntri)
+        # otherwise we estimate by the value at the centroids
+        else:
+            a_local= eval_at_midpoints(pts, tri, a)
+
+    # if no f provided assume no body heating
+    if f is None and time_dependent:
+        f= lambda x,t: np.zeros((t.shape[0], x.shape[0]))
+    elif f is None and not time_dependent:
+        f= lambda x: np.zeros(x.shape[0])
+
+
+
+    # construct relevant matrices
+
+    A_mat_local= A_local(pts, tri) # (Npts, 3, 3)
+
+    B_mat_local= T_local(pts, tri, 2) # (Npts, 3, 3)
+
+    D_vec_local= T_local(pts, tri, 1) # (Npts, 3)
+
+    # precompute the D vector, either (Npts,) or (N, Npts) depending on time dependence
+    if not time_dependent:
+        f_vec= eval_at_midpoints(pts, tri, f)
+        D_vec_local *= f_vec[:, None]
+        D_vec= flatten_vector(pts, tri, D_vec_local)
+    if time_dependent:
+        # (N, Npts)
+        f_vec= eval_at_midpoints(pts, tri, f, t=t)
+        D_vec_local_td= f_vec[:, :, None] * D_vec_local[None, :, :]
+
+
+    M1_mat_local=  dt/2 * a_local[:, None, None] * A_mat_local + B_mat_local
+    M2_mat_local= -dt/2 * a_local[:, None, None] * A_mat_local + B_mat_local
+
+    M1_mat= flatten_matrix(pts, tri, M1_mat_local)
+    M2_mat= flatten_matrix(pts, tri, M2_mat_local)
+    M1_int= M1_mat[np.ix_(interior,interior)]
+
+
+    # Solution vector
     u= np.zeros((N,) + u0.shape)
     u[0]= u0
-    # make sure that the boundary conditions are in place
-    u[:, boundary]= uD
+
+
+    # if a boundary condition is provided, we set that beforehand
+    # if g is None, then we assume homogeneous dirichlet BC 
+    # (don't modify the zeros in the u array)
+    if g is not None:
+        if time_dependent:
+            u[:, boundary]= g(pts[boundary], t)    
+        else:
+            u[:, boundary]= g(pts[boundary])
 
     for n in range(1, N):
+
+        # too lazy to update flatten_vector() to handle time dependent D_vec_local
+        if time_dependent:
+            D_vec= flatten_vector(pts, tri, D_vec_local_td[n])
+
         # the M1_mat @ u[n] (which currently only has the BC filled) allows the Dirichlet
         # BC to affect the interior.
         RHS= M2_mat @ u[n-1] + dt * D_vec - M1_mat @ u[n]
@@ -388,3 +432,21 @@ def heat(pts, tri, boundary, f, u0, dt, t_max, uD=None):
         u[n, interior]= spsolve(M1_int, RHS_int)
 
     return t, u
+
+
+def animate_solution(pts, tri, u, t):
+    #(AI CODE WARNING, TOO LAZY TO FIGURE THIS OUT ON MY OWN FOR A RANDOM VISUALIZATION)
+    fig, ax= plt.subplots()
+    ax.set_aspect('equal')
+
+    mesh= ax.tripcolor(pts[:,0], pts[:,1], tri, u[0], shading='gouraud', cmap='magma')
+    fig.colorbar(mesh, ax=ax)
+    mesh.set_clim(vmin=u.min(), vmax=u.max())
+
+    def update(frame):
+        mesh.set_array(u[frame])
+        ax.set_title(f't = {t[frame]:.2f}')
+        return mesh, # this comma is apparently crucial, we need this to return an iterable (tuple)
+
+    ani= FuncAnimation(fig, update, frames=u.shape[0], interval=50)
+    return ani
