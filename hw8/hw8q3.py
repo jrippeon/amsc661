@@ -68,7 +68,6 @@ u0= r + np.cos(phi)
 
 #%%% Normal BC %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 u0[boundary]= 0
-uD= u0[boundary]
 
 #%%% run the code %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 reload(fem)
@@ -85,8 +84,7 @@ t, u= fem.heat(
     f=f,
     u0=u0,
     dt=dt,
-    t_max=t_max, 
-    uD=uD
+    t_max=t_max
 )
 #%%% For plotting %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 def plot_surface(pts, tri, t, u, t_plot):
