@@ -78,7 +78,6 @@ for index in range(4):
     for t_plot in times:
         t, x, u= results[index]
         plot_at_time(t, x, u, t_plot, ax, label=f't={t_plot}')
-        # the _ apparently makes it not appear in the legend, neat
         ax.plot(x, u_exact(x, t_plot), c='k', linestyle='--', alpha=0.5)
     ax.set(
         xlabel='x',
@@ -86,5 +85,4 @@ for index in range(4):
         title=f'{method_names[index]} Method'
     )
     ax.legend()
-    # ax.legend([f't={t}' for t in times])
     plt.show()
