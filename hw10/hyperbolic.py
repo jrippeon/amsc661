@@ -34,6 +34,8 @@ def initialize(xmin, xmax, tmax, h, k, u0):
     u[0]= u0vec
     return t, x, u, N, M
 
+# NOTE: all three of these functions assume f(0) = 0, without that it all breaks
+
 def lax_fr_update(u, f, h, k):
     M= u.shape[0]
     # the creation of these matrices should be factored out of this function for
@@ -91,7 +93,7 @@ def numerically_solve(f, update, xmin, xmax, tmax, h, k, u0):
 
     return t, x, u
 
-def godunoff(f, fmin, fmax, xmin, xmax, tmax, h, k, u0):
+def godunov(f, fmin, fmax, xmin, xmax, tmax, h, k, u0):
     '''
     Solve:
 
